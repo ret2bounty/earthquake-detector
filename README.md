@@ -3,5 +3,5 @@ A simple, low-power earthquake detector using a RISC-V microcontroller and accel
 
 # Compilation and Simulation
 1. Compile the `main.c` and `start.S` files into `software.elf`:
-   `riscv64-unknown-elf-gcc -march=rv32im -mabi=ilp32 -Ttext=0x80000000 -nostdlib -o /mnt/c/Users/click/computerarchitecture/project/software.elf start.s main.c`
-2. Run the simulation using Renode Monitor by running the command `include @simulation.resc`.
+   `riscv64-unknown-elf-gcc -march=rv32im -mabi=ilp32 -Ttext=0x80000000 -nostdlib -o software.elf start.s main.c`
+2. Run the simulation using Renode Monitor by running the command `include @simulation.resc`
