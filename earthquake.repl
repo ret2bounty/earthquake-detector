@@ -7,22 +7,119 @@ ram: Memory.MappedMemory @ sysbus 0x80000000
 uart: UART.NS16550 @ sysbus 0x10000000
     wideRegisters: true 
 
-// "Smart" Sensor with fixed indentation
+// Simple GPIO for LED indicators (alert status)
+// Register map:
+//   0x00: Output data register (directly controls LEDs)
+//   0x04: Input data register (directly reads button states)
+gpio: Python.PythonPeripheral @ sysbus 0x30000000
+    size: 0x100
+    initable: true
+    script: '''
+if request.isInit:
+    output_reg = 0
+    input_reg = 0
+
+if request.isRead:
+    if request.offset == 0x00:
+        request.value = output_reg
+    elif request.offset == 0x04:
+        request.value = input_reg
+    else:
+        request.value = 0
+
+if request.isWrite:
+    if request.offset == 0x00:
+        output_reg = request.value
+        if request.value != 0:
+            self.Log(LogLevel.Info, "GPIO LEDs: " + str(bin(request.value)))
+'''
+
+// Multi-axis accelerometer sensor with realistic earthquake simulation
+// Register map:
+//   0x00: X-axis acceleration
+//   0x04: Y-axis acceleration  
+//   0x08: Z-axis acceleration
+//   0x0C: Status register (bit 0 = data ready, bit 1 = earthquake active)
+//   0x10: Peak magnitude (max of last N samples)
+//   0x14: Sample counter
 sensor: Python.PythonPeripheral @ sysbus 0x20000000
     size: 0x1000
     initable: true
     script: '''
+import random
+import math
+
+if request.isInit:
+    sample_count = 0
+    earthquake_active = False
+    earthquake_duration = 0
+    earthquake_magnitude = 0
+    peak_magnitude = 0
+    x_val = 0
+    y_val = 0
+    z_val = 1000
+    last_magnitude = 0
+
 if request.isRead:
-    import random
-    # Default: Low vibration (0-10)
-    val = random.randint(0, 10)
+    offset = request.offset
     
-    # 0.1% chance of EARTHQUAKE (80-200)
-    if random.random() > 0.999:
-        self.Log(LogLevel.Info, "Generating EARTHQUAKE tremor!")
-        val = random.randint(80, 200)
+    sample_count = sample_count + 1
     
-    request.value = val
-else:
-    self.Log(LogLevel.Warning, "Cpu tried to write to sensor - ignored.")
+    if not earthquake_active and random.random() > 0.9995:
+        earthquake_active = True
+        earthquake_duration = random.randint(50, 200)
+        earthquake_magnitude = random.randint(3, 9)
+        self.Log(LogLevel.Warning, "EARTHQUAKE STARTED! Magnitude: " + str(earthquake_magnitude))
+    
+    if earthquake_active:
+        progress = 1.0 - (earthquake_duration / 200.0)
+        intensity = earthquake_magnitude * 15
+        
+        if progress < 0.2:
+            x_val = int(random.gauss(0, intensity * 0.3))
+            y_val = int(random.gauss(0, intensity * 0.3))
+            z_val = 1000 + int(random.gauss(0, intensity * 2))
+        else:
+            x_val = int(random.gauss(0, intensity * 2))
+            y_val = int(random.gauss(0, intensity * 2))
+            z_val = 1000 + int(random.gauss(0, intensity * 0.5))
+        
+        earthquake_duration = earthquake_duration - 1
+        if earthquake_duration <= 0:
+            earthquake_active = False
+            self.Log(LogLevel.Info, "Earthquake ended")
+    else:
+        x_val = int(random.gauss(0, 5))
+        y_val = int(random.gauss(0, 5))
+        z_val = 1000 + int(random.gauss(0, 3))
+    
+    dz = z_val - 1000
+    last_magnitude = int(math.sqrt(x_val*x_val + y_val*y_val + dz*dz))
+    if last_magnitude > peak_magnitude:
+        peak_magnitude = last_magnitude
+    
+    if offset == 0x00:
+        request.value = x_val & 0xFFFFFFFF
+    elif offset == 0x04:
+        request.value = y_val & 0xFFFFFFFF
+    elif offset == 0x08:
+        request.value = z_val & 0xFFFFFFFF
+    elif offset == 0x0C:
+        status = 0x01
+        if earthquake_active:
+            status = status | 0x02
+        if last_magnitude > 50:
+            status = status | 0x04
+        request.value = status
+    elif offset == 0x10:
+        request.value = peak_magnitude
+    elif offset == 0x14:
+        request.value = sample_count
+    else:
+        request.value = 0
+
+if request.isWrite:
+    if request.offset == 0x10:
+        peak_magnitude = 0
+        self.Log(LogLevel.Info, "Peak magnitude reset")
 '''

@@ -1,14 +1,14 @@
 :name: Earthquake Detector
 
-# 1. Load the platform (now includes the smart sensor logic)
+# Load the platform
 mach create
 machine LoadPlatformDescription @earthquake.repl
 
-# 2. Load the software (`software.elf` compiled using `main.c` and `start.S`)
+# Load the software
 sysbus LoadELF @software.elf
 
-# 3. Open UART to see the alerts
+# Open UART to see the alerts
 showAnalyzer uart
 
-# 4. Start!
+# Start
 start
